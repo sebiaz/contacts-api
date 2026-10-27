@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"contacts-api/internal/database"
 	"contacts-api/internal/handlers"
@@ -17,9 +18,18 @@ import (
 )
 
 func main() {
+	// Load configuration from environment
+	port := getEnv("PORT", "8080")
+	ginMode := getEnv("GIN_MODE", "debug")
+	dbPath := getEnv("DB_PATH", "contacts.db")
+	corsAllowedOrigins := getEnv("CORS_ALLOWED_ORIGINS", "*")
+
+	// Set Gin mode
+	gin.SetMode(ginMode)
+
 	// Initialize database with pure Go SQLite driver (modernc.org/sqlite)
 	// Use database/sql directly with modernc driver, then pass to GORM
-	sqlDB, err := sql.Open("sqlite", "file:contacts.db?cache=shared")
+	sqlDB, err := sql.Open("sqlite", "file:"+dbPath+"?cache=shared")
 	if err != nil {
 		log.Fatal("Failed to open database:", err)
 	}
@@ -49,9 +59,14 @@ func main() {
 	// Setup router
 	r := gin.Default()
 
-	// CORS middleware
+	// CORS middleware with configurable allowed origins
+	allowedOrigins := parseOrigins(corsAllowedOrigins)
 	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := c.Request.Header.Get("Origin")
+		if isOriginAllowed(origin, allowedOrigins) {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == "OPTIONS" {
@@ -120,15 +135,45 @@ func main() {
 		}
 	}
 
-	// Get port from environment or default to 8080
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
 	// Start server
 	log.Printf("Server starting on :%s", port)
 	if err := r.Run(":" + port); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
+}
+
+// getEnv retrieves an environment variable or returns a default value
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// parseOrigins parses a comma-separated list of allowed origins
+func parseOrigins(origins string) []string {
+	if origins == "*" {
+		return []string{"*"}
+	}
+	var result []string
+	for _, o := range strings.Split(origins, ",") {
+		trimmed := strings.TrimSpace(o)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// isOriginAllowed checks if the request origin is in the allowed list
+func isOriginAllowed(origin string, allowedOrigins []string) bool {
+	if len(allowedOrigins) == 1 && allowedOrigins[0] == "*" {
+		return true
+	}
+	for _, allowed := range allowedOrigins {
+		if allowed == origin {
+			return true
+		}
+	}
+	return false
 }

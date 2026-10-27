@@ -35,3 +35,21 @@ dist/
 # Environment
 .env
 .env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+temp/
+
+# Profiling
+*.prof
+*.pprof
+
+# Misc
+*.bak
+*.backup
